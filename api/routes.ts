@@ -6,13 +6,19 @@ import { ZodError } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
 
+declare module 'express-session' {
+  interface SessionData {
+    userId: number;
+  }
+}
+
 const SESSION_SECRET = process.env.SESSION_SECRET || "supersecretkey";
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 24; // 24 hours
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup session
   const MemoryStoreSession = MemoryStore(session);
-  
+
   app.use(session({
     secret: SESSION_SECRET,
     resave: false,
@@ -37,65 +43,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     if (!req.session.userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
-    
+
     const user = await storage.getUser(req.session.userId);
     if (!user || user.role !== "admin") {
       return res.status(403).json({ message: "Forbidden: Admin role required" });
     }
-    
+
     return next();
+  };
+
+  const createActivity = async (userId: number | undefined, type: string, action: string, documentId?: number, documentName?: string) => {
+    if (!userId) return;
+    return storage.createActivity({
+      type,
+      userId,
+      action,
+      documentId,
+      documentName
+    });
   };
 
   // Auth routes
   app.post("/api/auth/signup", async (req, res) => {
     try {
       const userData = insertUserSchema.parse(req.body);
-      
-      // Check if username or email already exists
-      const existingUsername = await storage.getUserByUsername(userData.username);
-      if (existingUsername) {
-        return res.status(400).json({ message: "Username already exists" });
-      }
-      
-      const existingEmail = await storage.getUserByEmail(userData.email);
-      if (existingEmail) {
-        return res.status(400).json({ message: "Email already exists" });
-      }
-      
       const user = await storage.createUser(userData);
-      
-      // Don't return the password
-      const { password, ...userWithoutPassword } = user;
-      
-      return res.status(201).json(userWithoutPassword);
+      req.session.userId = user.id;
+      res.json(user);
     } catch (error) {
       if (error instanceof ZodError) {
-        return res.status(400).json({ message: "Invalid input data", errors: error.errors });
+        res.status(400).json({ message: "Invalid input", errors: error.errors });
+      } else {
+        res.status(500).json({ message: "Internal server error" });
       }
-      console.error(error);
-      return res.status(500).json({ message: "Internal server error" });
     }
   });
 
   app.post("/api/auth/login", async (req, res) => {
     try {
       const { username, password } = req.body;
-      
+
       if (!username || !password) {
         return res.status(400).json({ message: "Username and password are required" });
       }
-      
+
       const user = await storage.getUserByUsername(username);
       if (!user || user.password !== password) {
         return res.status(401).json({ message: "Invalid credentials" });
       }
-      
+
       // Set user session
       req.session.userId = user.id;
-      
+
       // Don't return the password
       const { password: _, ...userWithoutPassword } = user;
-      
+
       return res.status(200).json(userWithoutPassword);
     } catch (error) {
       console.error(error);
@@ -119,10 +121,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Don't return the password
       const { password, ...userWithoutPassword } = user;
-      
+
       return res.status(200).json(userWithoutPassword);
     } catch (error) {
       console.error(error);
@@ -134,13 +136,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/users", isAdmin, async (req, res) => {
     try {
       const users = await storage.listUsers();
-      
+
       // Don't return passwords
       const usersWithoutPasswords = users.map(user => {
         const { password, ...userWithoutPassword } = user;
         return userWithoutPassword;
       });
-      
+
       return res.status(200).json(usersWithoutPasswords);
     } catch (error) {
       console.error(error);
@@ -151,18 +153,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/users/:id", isAdmin, async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
-      
+
       // Validate input, but allow partial updates
       const userData = req.body;
-      
+
       const updatedUser = await storage.updateUser(userId, userData);
       if (!updatedUser) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       // Don't return the password
       const { password, ...userWithoutPassword } = updatedUser;
-      
+
       return res.status(200).json(userWithoutPassword);
     } catch (error) {
       console.error(error);
@@ -173,17 +175,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/users/:id", isAdmin, async (req, res) => {
     try {
       const userId = parseInt(req.params.id);
-      
+
       // Don't allow deleting yourself
       if (userId === req.session.userId) {
         return res.status(400).json({ message: "Cannot delete your own account" });
       }
-      
+
       const deleted = await storage.deleteUser(userId);
       if (!deleted) {
         return res.status(404).json({ message: "User not found" });
       }
-      
+
       return res.status(200).json({ message: "User deleted successfully" });
     } catch (error) {
       console.error(error);
@@ -196,7 +198,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.session.userId;
       const user = await storage.getUser(userId);
-      
+
       let documents;
       // Admins can see all documents, others can only see their own
       if (user?.role === "admin") {
@@ -204,7 +206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         documents = await storage.listDocuments(userId);
       }
-      
+
       return res.status(200).json(documents);
     } catch (error) {
       console.error(error);
@@ -218,9 +220,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...req.body,
         userId: req.session.userId
       });
-      
+
       const document = await storage.createDocument(documentData);
-      
+
       // Create activity for upload
       await storage.createActivity({
         type: "upload",
@@ -228,7 +230,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.session.userId,
         details: `${document.name} was uploaded`
       });
-      
+
       return res.status(201).json(document);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -243,18 +245,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-      
+
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
-      
+
       const user = await storage.getUser(req.session.userId);
-      
+
       // Check permissions: Admin can access any document, others only their own
       if (user?.role !== "admin" && document.userId !== req.session.userId) {
         return res.status(403).json({ message: "You don't have permission to access this document" });
       }
-      
+
       return res.status(200).json(document);
     } catch (error) {
       console.error(error);
@@ -266,20 +268,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-      
+
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
-      
+
       const user = await storage.getUser(req.session.userId);
-      
+
       // Check permissions: Admin or owner can edit
       if (user?.role !== "admin" && document.userId !== req.session.userId) {
         return res.status(403).json({ message: "You don't have permission to edit this document" });
       }
-      
+
       const updatedDocument = await storage.updateDocument(documentId, req.body);
-      
+
       // Create activity for edit
       await storage.createActivity({
         type: "edit",
@@ -287,7 +289,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.session.userId,
         details: `${document.name} was edited`
       });
-      
+
       return res.status(200).json(updatedDocument);
     } catch (error) {
       console.error(error);
@@ -299,28 +301,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const document = await storage.getDocument(documentId);
-      
+
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
-      
+
       const user = await storage.getUser(req.session.userId);
-      
+
       // Check permissions: Admin or owner can delete
       if (user?.role !== "admin" && document.userId !== req.session.userId) {
         return res.status(403).json({ message: "You don't have permission to delete this document" });
       }
-      
+
       const documentName = document.name;
       const deleted = await storage.deleteDocument(documentId);
-      
+
       // Create activity for delete
       await storage.createActivity({
         type: "delete",
         userId: req.session.userId,
         details: `${documentName} was deleted`
       });
-      
+
       return res.status(200).json({ message: "Document deleted successfully" });
     } catch (error) {
       console.error(error);
@@ -332,26 +334,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const documentId = parseInt(req.params.id);
       const { starred } = req.body;
-      
+
       if (starred === undefined) {
         return res.status(400).json({ message: "Starred status is required" });
       }
-      
+
       const document = await storage.getDocument(documentId);
-      
+
       if (!document) {
         return res.status(404).json({ message: "Document not found" });
       }
-      
+
       const user = await storage.getUser(req.session.userId);
-      
+
       // Check permissions: Admin or owner can star/unstar
       if (user?.role !== "admin" && document.userId !== req.session.userId) {
         return res.status(403).json({ message: "You don't have permission to star/unstar this document" });
       }
-      
+
       const updatedDocument = await storage.starDocument(documentId, starred);
-      
+
       return res.status(200).json(updatedDocument);
     } catch (error) {
       console.error(error);
@@ -364,7 +366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const activities = await storage.listActivities(limit);
-      
+
       return res.status(200).json(activities);
     } catch (error) {
       console.error(error);
@@ -380,17 +382,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId: req.session.userId,
         status: "pending"
       });
-      
+
       const ingestion = await storage.createIngestion(ingestionData);
-      
+
       // Simulate ingestion process starting
       setTimeout(async () => {
         await storage.updateIngestionStatus(ingestion.id, "processing", "Starting ingestion process...");
-        
+
         // Simulate completion after some time
         setTimeout(async () => {
           await storage.updateIngestionStatus(ingestion.id, "completed", "Document successfully ingested");
-          
+
           // Create activity
           await storage.createActivity({
             type: "ingestion",
@@ -400,7 +402,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }, 5000);
       }, 1000);
-      
+
       return res.status(201).json(ingestion);
     } catch (error) {
       if (error instanceof ZodError) {
@@ -425,11 +427,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ingestionId = parseInt(req.params.id);
       const ingestion = await storage.getIngestion(ingestionId);
-      
+
       if (!ingestion) {
         return res.status(404).json({ message: "Ingestion not found" });
       }
-      
+
       return res.status(200).json(ingestion);
     } catch (error) {
       console.error(error);
@@ -441,18 +443,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/qa/query", isAuthenticated, async (req, res) => {
     try {
       const { query } = req.body;
-      
+
       if (!query) {
         return res.status(400).json({ message: "Query is required" });
       }
-      
+
       // Create activity for search
       await storage.createActivity({
         type: "query",
         userId: req.session.userId,
         details: `"${query}" was queried`
       });
-      
+
       // Simulate Q&A response
       const response = {
         answer: "This is a simulated response to your query: " + query,
@@ -461,7 +463,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           { documentId: 3, title: "Q1 Financial Summary.xlsx", relevance: 0.78 }
         ]
       };
-      
+
       return res.status(200).json(response);
     } catch (error) {
       console.error(error);
