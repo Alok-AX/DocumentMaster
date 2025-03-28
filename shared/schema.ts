@@ -50,6 +50,7 @@ export const insertActivitySchema = activitySchema.omit({ id: true, createdAt: t
 export const ingestionSchema = z.object({
   id: z.number(),
   documentId: z.number(),
+  userId: z.number(),
   status: z.enum(["pending", "processing", "completed", "failed"]),
   logs: z.string().nullable().optional(),
   createdAt: z.date().nullable().optional(),
