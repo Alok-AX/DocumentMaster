@@ -1,0 +1,30 @@
+{
+    "version": 2,
+    "buildCommand": "npm run build",
+    "installCommand": "npm install",
+    "framework": "vite",
+    "functions": {
+      "server/index.ts": {
+        "memory": 1024,
+        "maxDuration": 30
+      }
+    },
+    "routes": [
+      {
+        "src": "/api/(.*)",
+        "dest": "/server/index.ts"
+      },
+      {
+        "src": "/assets/(.*)",
+        "dest": "/assets/$1"
+      },
+      {
+        "src": "/(.*)",
+        "dest": "/index.html"
+      }
+    ],
+    "env": {
+      "NODE_ENV": "production",
+      "SESSION_SECRET": "your_session_secret"
+    }
+  }
