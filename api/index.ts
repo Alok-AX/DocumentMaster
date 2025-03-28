@@ -17,7 +17,8 @@ app.use(express.urlencoded({ extended: false }));
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
-  app.use(express.static(path.join(__dirname, '../dist')));
+  const publicPath = path.join(__dirname, '../dist/public');
+  app.use(express.static(publicPath));
 }
 
 // Logging middleware
@@ -79,7 +80,7 @@ app.get('/api/health', (req, res) => {
 // Serve index.html for all non-API routes in production
 if (process.env.NODE_ENV === 'production') {
   app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../dist/index.html'));
+    res.sendFile(path.join(__dirname, '../dist/public/index.html'));
   });
 }
 
