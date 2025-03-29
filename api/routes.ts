@@ -501,5 +501,4 @@ router.post("/api/qa/query", isAuthenticated, async (req, res) => {
   }
 });
 
-const httpServer = createServer(router);
 export { router };
