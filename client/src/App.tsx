@@ -23,7 +23,7 @@ function Router() {
       {/* Auth pages */}
       <Route path="/login" component={Login} />
       <Route path="/signup" component={Signup} />
-      
+
       {/* Main application pages */}
       <Route path="/" component={Dashboard} />
       <Route path="/dashboard" component={Dashboard} />
@@ -32,7 +32,9 @@ function Router() {
       <Route path="/qa" component={QA} />
       <Route path="/users" component={Users} />
       <Route path="/settings" component={Settings} />
-      
+
+
+
       {/* Fallback to 404 */}
       <Route component={NotFound} />
     </Switch>
