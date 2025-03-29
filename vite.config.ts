@@ -40,7 +40,8 @@ export default defineConfig({
         chunkFileNames: 'assets/[name].[hash].js',
         assetFileNames: 'assets/[name].[hash].[ext]'
       }
-    }
+    },
+    sourcemap: true
   },
   server: {
     port: 5173,
