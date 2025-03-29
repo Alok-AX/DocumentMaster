@@ -31,6 +31,8 @@ function Router() {
       <Route path="/ingestion" component={IngestionPage} />
       <Route path="/qa" component={QA} />
       <Route path="/users" component={Users} />
+
+
       <Route path="/settings" component={Settings} />
 
 
