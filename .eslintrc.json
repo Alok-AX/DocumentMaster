@@ -18,12 +18,14 @@
         "react-refresh"
     ],
     "rules": {
-        "react-refresh/only-export-components": "warn",
+        "react-refresh/only-export-components": "off",
         "@typescript-eslint/no-explicit-any": "warn",
         "@typescript-eslint/no-unused-vars": [
             "warn",
             {
-                "argsIgnorePattern": "^_"
+                "argsIgnorePattern": "^_",
+                "varsIgnorePattern": "^_",
+                "ignoreRestSiblings": true
             }
         ]
     }
