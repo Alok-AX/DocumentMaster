@@ -5,6 +5,8 @@ import { insertUserSchema, insertDocumentSchema, insertActivitySchema, insertIng
 import { ZodError } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import express from 'express';
+import { z } from 'zod';
 
 declare module 'express-session' {
   interface SessionData {
@@ -15,8 +17,10 @@ declare module 'express-session' {
 const SESSION_SECRET = process.env.SESSION_SECRET || "supersecretkey";
 const SESSION_MAX_AGE = 1000 * 60 * 60 * 24; // 24 hours
 
+const router = express.Router();
+
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Setup session
+  // Setup session with memory store
   const MemoryStoreSession = MemoryStore(session);
 
   app.use(session({
@@ -24,10 +28,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     resave: false,
     saveUninitialized: false,
     store: new MemoryStoreSession({
-      checkPeriod: SESSION_MAX_AGE
+      checkPeriod: SESSION_MAX_AGE,
+      ttl: SESSION_MAX_AGE
     }),
     cookie: {
-      maxAge: SESSION_MAX_AGE
+      maxAge: SESSION_MAX_AGE,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax"
     }
   }));
 
@@ -514,3 +521,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   return httpServer;
 }
+
+export { router };
